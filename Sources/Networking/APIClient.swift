@@ -17,17 +17,23 @@ public actor APIClient {
     private let session: URLSession
     private let decoder: JSONDecoder
     private var defaultHeaders: [String: String]
+    private let adapters: [RequestAdapter]
+    private let retrier: RequestRetrier?
 
     public init(
         baseURL: URL,
         session: URLSession = .shared,
         decoder: JSONDecoder = JSONDecoder(),
-        defaultHeaders: [String: String] = [:]
+        defaultHeaders: [String: String] = [:],
+        adapters: [RequestAdapter] = [],
+        retrier: RequestRetrier? = nil
     ) {
         self.baseURL = baseURL
         self.session = session
         self.decoder = decoder
         self.defaultHeaders = defaultHeaders
+        self.adapters = adapters
+        self.retrier = retrier
     }
 
     /// Update a default header sent with every request (pass `nil` to remove it).
@@ -37,30 +43,48 @@ public actor APIClient {
 
     @discardableResult
     public func send<Response>(_ endpoint: Endpoint<Response>) async throws -> Response {
-        let request = try makeRequest(for: endpoint)
-        log.debug("→ \(endpoint.method.rawValue) \(request.url?.absoluteString ?? endpoint.path)")
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw APIError.transport(error.localizedDescription)
-        }
-
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            log.error("← \(http.statusCode) \(endpoint.path)")
-            throw APIError.unacceptableStatus(code: http.statusCode, data: data)
-        }
+        let data = try await sendForData(endpoint)
 
         if Response.self == EmptyResponse.self {
             return EmptyResponse() as! Response
         }
-
         do {
             return try decoder.decode(Response.self, from: data)
         } catch {
             throw APIError.decoding(error.localizedDescription)
+        }
+    }
+
+    /// Sends the request and returns the raw body, applying adapters and the
+    /// retry policy. Use this when you need bytes (images, files) rather than JSON.
+    public func sendForData<Response>(_ endpoint: Endpoint<Response>) async throws -> Data {
+        var request = try makeRequest(for: endpoint)
+        for adapter in adapters {
+            request = try await adapter.adapt(request)
+        }
+
+        var attempt = 0
+        while true {
+            log.debug("→ \(endpoint.method.rawValue) \(request.url?.absoluteString ?? endpoint.path)")
+            do {
+                let (data, response) = try await session.data(for: request)
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    throw APIError.unacceptableStatus(code: http.statusCode, data: data)
+                }
+                return data
+            } catch {
+                let apiError = (error as? APIError) ?? .transport(error.localizedDescription)
+                guard let retrier,
+                      case let .retry(delay) = await retrier.shouldRetry(request, dueTo: apiError, attempt: attempt)
+                else {
+                    log.error("✗ \(endpoint.path): \(String(describing: apiError))")
+                    throw apiError
+                }
+                attempt += 1
+                if delay > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+            }
         }
     }
 
