@@ -14,7 +14,7 @@ private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Networking"
 /// default headers (e.g. an auth token), then send typed `Endpoint`s.
 public actor APIClient {
     private let baseURL: URL
-    private let session: URLSession
+    private let transport: HTTPTransport
     private let decoder: JSONDecoder
     private var defaultHeaders: [String: String]
     private let adapters: [RequestAdapter]
@@ -22,14 +22,14 @@ public actor APIClient {
 
     public init(
         baseURL: URL,
-        session: URLSession = .shared,
+        transport: HTTPTransport = URLSession.shared,
         decoder: JSONDecoder = JSONDecoder(),
         defaultHeaders: [String: String] = [:],
         adapters: [RequestAdapter] = [],
         retrier: RequestRetrier? = nil
     ) {
         self.baseURL = baseURL
-        self.session = session
+        self.transport = transport
         self.decoder = decoder
         self.defaultHeaders = defaultHeaders
         self.adapters = adapters
@@ -67,7 +67,7 @@ public actor APIClient {
         while true {
             log.debug("→ \(endpoint.method.rawValue) \(request.url?.absoluteString ?? endpoint.path)")
             do {
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await transport.data(for: request)
                 if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                     throw APIError.unacceptableStatus(code: http.statusCode, data: data)
                 }
