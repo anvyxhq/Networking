@@ -19,6 +19,7 @@ public actor APIClient {
     private var defaultHeaders: [String: String]
     private let adapters: [RequestAdapter]
     private let retrier: RequestRetrier?
+    private let logsCURL: Bool
 
     public init(
         baseURL: URL,
@@ -26,7 +27,8 @@ public actor APIClient {
         decoder: JSONDecoder = JSONDecoder(),
         defaultHeaders: [String: String] = [:],
         adapters: [RequestAdapter] = [],
-        retrier: RequestRetrier? = nil
+        retrier: RequestRetrier? = nil,
+        logsCURL: Bool = false
     ) {
         self.baseURL = baseURL
         self.transport = transport
@@ -34,6 +36,7 @@ public actor APIClient {
         self.defaultHeaders = defaultHeaders
         self.adapters = adapters
         self.retrier = retrier
+        self.logsCURL = logsCURL
     }
 
     /// Update a default header sent with every request (pass `nil` to remove it).
@@ -61,6 +64,10 @@ public actor APIClient {
         var request = try makeRequest(for: endpoint)
         for adapter in adapters {
             request = try await adapter.adapt(request)
+        }
+
+        if logsCURL {
+            log.debug("\(request.curlString)")
         }
 
         var attempt = 0
