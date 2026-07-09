@@ -3,7 +3,7 @@
 A tiny, dependency-free async/await HTTP client for iOS, built around typed endpoints.
 
 [![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org)
-[![Platform](https://img.shields.io/badge/iOS-26%2B-blue.svg)](https://developer.apple.com/ios/)
+[![Platform](https://img.shields.io/badge/iOS-16%2B-blue.svg)](https://developer.apple.com/ios/)
 [![SPM](https://img.shields.io/badge/SPM-compatible-brightgreen.svg)](https://swift.org/package-manager/)
 
 ## Features
@@ -15,13 +15,13 @@ A tiny, dependency-free async/await HTTP client for iOS, built around typed endp
 ## Installation
 
 ```swift
-.package(url: "https://github.com/anvyxhq/Networking.git", from: "1.0.0")
+.package(url: "https://github.com/anvyxhq/Networking.git", branch: "main")
 ```
 
 ## Usage
 
 ```swift
-import Networking
+import AnvyxNetworkKit
 
 struct User: Decodable { let id: Int; let name: String }
 
@@ -33,7 +33,7 @@ let user: User = try await client.send(Endpoint(path: "users/1"))
 // POST with a JSON body
 struct NewUser: Encodable { let name: String }
 let created: User = try await client.send(
-    Endpoint<User>(path: "users", method: .post).body(json: NewUser(name: "Anvora"))
+    Endpoint<User>(path: "users", method: .post).body(json: NewUser(name: "Anvyx"))
 )
 
 // Auth header for every request
@@ -42,7 +42,7 @@ await client.setHeader("Bearer \(token)", for: "Authorization")
 
 ## Requirements
 
-- iOS 26.0+ · Swift 5.9+
+- iOS 16+ · Swift 5.9+
 
 ## License
 

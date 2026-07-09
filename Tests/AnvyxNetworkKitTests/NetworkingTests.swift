@@ -19,7 +19,7 @@ final class NetworkingTests: XCTestCase {
     func testJSONBodyHelper() {
         struct Payload: Encodable { let name: String }
         let endpoint = Endpoint<EmptyResponse>(path: "users", method: .post)
-            .body(json: Payload(name: "anvora"))
+            .body(json: Payload(name: "anvyx"))
         XCTAssertNotNil(endpoint.body)
         XCTAssertEqual(endpoint.headers["Content-Type"], "application/json")
     }

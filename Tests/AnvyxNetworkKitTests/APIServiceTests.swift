@@ -33,11 +33,11 @@ private struct UserService: APIService, UserProviding {
 
 final class APIServiceTests: XCTestCase {
     func testDomainServiceReturnsDecodedModel() async throws {
-        let json = #"{"id":7,"name":"anvora"}"#.data(using: .utf8)!
+        let json = #"{"id":7,"name":"anvyx"}"#.data(using: .utf8)!
         let client = APIClient(baseURL: URL(string: "https://example.com")!, transport: FixedTransport(body: json))
         let service: UserProviding = UserService(client: client)
 
         let user = try await service.user(id: 7)
-        XCTAssertEqual(user, User(id: 7, name: "anvora"))
+        XCTAssertEqual(user, User(id: 7, name: "anvyx"))
     }
 }

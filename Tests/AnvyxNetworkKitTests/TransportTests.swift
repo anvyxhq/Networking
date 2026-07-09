@@ -22,11 +22,11 @@ private struct Item: Decodable, Equatable { let id: Int; let name: String }
 
 final class TransportTests: XCTestCase {
     func testDecodesInjectedResponse() async throws {
-        let json = #"{"id":1,"name":"anvora"}"#.data(using: .utf8)!
+        let json = #"{"id":1,"name":"anvyx"}"#.data(using: .utf8)!
         let client = APIClient(baseURL: URL(string: "https://example.com")!,
                                transport: StubTransport(status: 200, body: json))
         let item: Item = try await client.send(Endpoint(path: "items/1"))
-        XCTAssertEqual(item, Item(id: 1, name: "anvora"))
+        XCTAssertEqual(item, Item(id: 1, name: "anvyx"))
     }
 
     func testThrowsOnUnacceptableStatus() async {
