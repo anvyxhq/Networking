@@ -22,19 +22,24 @@ public struct Endpoint<Response: Decodable & Sendable>: Sendable {
     public var query: [String: String]
     public var headers: [String: String]
     public var body: Data?
+    /// Per-endpoint retry policy; when set it overrides the client's default
+    /// retrier for this request only (e.g. no retries on a non-idempotent POST).
+    public var retrier: (any RequestRetrier)?
 
     public init(
         path: String,
         method: HTTPMethod = .get,
         query: [String: String] = [:],
         headers: [String: String] = [:],
-        body: Data? = nil
+        body: Data? = nil,
+        retrier: (any RequestRetrier)? = nil
     ) {
         self.path = path
         self.method = method
         self.query = query
         self.headers = headers
         self.body = body
+        self.retrier = retrier
     }
 
     /// Convenience for a JSON-encoded body.
@@ -42,6 +47,13 @@ public struct Endpoint<Response: Decodable & Sendable>: Sendable {
         var copy = self
         copy.body = try? encoder.encode(value)
         copy.headers["Content-Type"] = "application/json"
+        return copy
+    }
+
+    /// A copy that uses `retrier` instead of the client's default retry policy.
+    public func retrying(_ retrier: any RequestRetrier) -> Endpoint {
+        var copy = self
+        copy.retrier = retrier
         return copy
     }
 }

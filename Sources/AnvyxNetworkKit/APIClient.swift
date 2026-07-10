@@ -81,8 +81,9 @@ public actor APIClient {
                 return data
             } catch {
                 let apiError = (error as? APIError) ?? .transport(error.localizedDescription)
-                guard let retrier,
-                      case let .retry(delay) = await retrier.shouldRetry(request, dueTo: apiError, attempt: attempt)
+                let effectiveRetrier = endpoint.retrier ?? retrier
+                guard let effectiveRetrier,
+                      case let .retry(delay) = await effectiveRetrier.shouldRetry(request, dueTo: apiError, attempt: attempt)
                 else {
                     log.error("✗ \(endpoint.path): \(String(describing: apiError))")
                     throw apiError
