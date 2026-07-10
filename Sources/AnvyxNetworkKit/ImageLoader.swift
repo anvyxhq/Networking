@@ -18,7 +18,11 @@ public protocol ImageCaching: Sendable {
     func store(_ image: UIImage, for url: URL)
 }
 
-/// `NSCache`-backed image cache (thread-safe).
+/// `NSCache`-backed image cache.
+///
+/// `@unchecked Sendable` is safe here: the only stored property is an `NSCache`,
+/// which is documented as thread-safe — its accessors may be called from any
+/// thread concurrently. No further synchronization is required.
 public final class DefaultImageCache: ImageCaching, @unchecked Sendable {
     private let cache = NSCache<NSURL, UIImage>()
 

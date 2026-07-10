@@ -1,5 +1,12 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.2
 import PackageDescription
+
+let concurrencyBaseline: [SwiftSetting] = [
+    .swiftLanguageMode(.v6),
+    .defaultIsolation(nil),
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+    .enableUpcomingFeature("InferIsolatedConformances"),
+]
 
 let package = Package(
     name: "Networking",
@@ -10,7 +17,11 @@ let package = Package(
         .library(name: "AnvyxNetworkKit", targets: ["AnvyxNetworkKit"]),
     ],
     targets: [
-        .target(name: "AnvyxNetworkKit"),
-        .testTarget(name: "AnvyxNetworkKitTests", dependencies: ["AnvyxNetworkKit"]),
+        .target(name: "AnvyxNetworkKit", swiftSettings: concurrencyBaseline),
+        .testTarget(
+            name: "AnvyxNetworkKitTests",
+            dependencies: ["AnvyxNetworkKit"],
+            swiftSettings: concurrencyBaseline
+        ),
     ]
 )

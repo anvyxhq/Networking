@@ -16,7 +16,7 @@ public enum HTTPMethod: String, Sendable {
 }
 
 /// A typed description of a single request. Generic over the `Response` it decodes to.
-public struct Endpoint<Response: Decodable>: Sendable {
+public struct Endpoint<Response: Decodable & Sendable>: Sendable {
     public var path: String
     public var method: HTTPMethod
     public var query: [String: String]
