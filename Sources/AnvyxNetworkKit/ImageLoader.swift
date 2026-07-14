@@ -81,7 +81,8 @@ public extension UIImageView {
         image = placeholder
         guard let url else { return }
         Task { [weak self] in
-            if let loaded = try? await loader.image(from: url) { self?.image = loaded }
+            guard let self, let loaded = try? await loader.image(from: url) else { return }
+            self.image = loaded
         }
     }
 }
