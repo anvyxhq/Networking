@@ -2,7 +2,7 @@
 
 A tiny, dependency-free async/await HTTP client for iOS, built around typed endpoints.
 
-[![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org)
+[![Swift](https://img.shields.io/badge/Swift-6.2+-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/iOS-16%2B-blue.svg)](https://developer.apple.com/ios/)
 [![SPM](https://img.shields.io/badge/SPM-compatible-brightgreen.svg)](https://swift.org/package-manager/)
 
@@ -17,6 +17,8 @@ A tiny, dependency-free async/await HTTP client for iOS, built around typed endp
 ```swift
 .package(url: "https://github.com/anvyxhq/Networking.git", branch: "main")
 ```
+
+> The latest tagged release predates the current `Anvyx*` module names, so depend on `main` until the next tagged release.
 
 ## Usage
 
@@ -42,7 +44,7 @@ await client.setHeader("Bearer \(token)", for: "Authorization")
 
 ## Requirements
 
-- iOS 16+ · Swift 5.9+
+- iOS 16+ · Swift 6.2+ (Xcode 26+)
 
 ## License
 
