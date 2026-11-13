@@ -63,6 +63,65 @@ final class OfflineRequestQueueTests: XCTestCase {
         XCTAssertEqual(pending, 1)
     }
 
+    func testCredentialHeadersAreNotWrittenToDisk() async throws {
+        let file = tempFile(); defer { try? FileManager.default.removeItem(at: file) }
+        let queue = OfflineRequestQueue(fileURL: file)
+        var request = URLRequest(url: URL(string: "https://a.com/1")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer s3cret", forHTTPHeaderField: "Authorization")
+        request.setValue("sid=s3cret", forHTTPHeaderField: "Cookie")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        await queue.enqueue(request)
+        await queue.enqueue(QueuedRequest(url: URL(string: "https://a.com/2")!, headers: ["X-API-Key": "s3cret"]))
+
+        let stored = try String(decoding: Data(contentsOf: file), as: UTF8.self)
+        XCTAssertFalse(stored.contains("s3cret"), stored)
+        XCTAssertTrue(stored.contains("application"))
+        let pending = await queue.pending
+        XCTAssertEqual(pending.first?.headers, ["Content-Type": "application/json"])
+        XCTAssertEqual(pending.last?.headers, [:])
+    }
+
+    func testOldFileWithCredentialHeadersIsCleanedOnLoad() async throws {
+        let file = tempFile(); defer { try? FileManager.default.removeItem(at: file) }
+        let legacy = [QueuedRequest(url: URL(string: "https://a.com/1")!, headers: ["Authorization": "Bearer s3cret"])]
+        try JSONEncoder().encode(legacy).write(to: file)
+
+        let queue = OfflineRequestQueue(fileURL: file)
+        let pending = await queue.pending
+        XCTAssertEqual(pending.first?.headers, [:])
+        let stored = try String(decoding: Data(contentsOf: file), as: UTF8.self)
+        XCTAssertFalse(stored.contains("s3cret"))
+    }
+
+    func testFlushAppliesAdapters() async {
+        let file = tempFile(); defer { try? FileManager.default.removeItem(at: file) }
+        let queue = OfflineRequestQueue(fileURL: file)
+        await queue.enqueue(URLRequest(url: URL(string: "https://a.com/1")!))
+
+        let seen = HeaderBox()
+        let sent = await queue.flush(adapters: [BearerTokenAdapter { "fresh" }]) { request in
+            await seen.set(request.value(forHTTPHeaderField: "Authorization"))
+        }
+        XCTAssertEqual(sent, 1)
+        let header = await seen.value
+        XCTAssertEqual(header, "Bearer fresh")
+    }
+
+    func testFileIsExcludedFromBackup() async throws {
+        let file = tempFile(); defer { try? FileManager.default.removeItem(at: file) }
+        let queue = OfflineRequestQueue(fileURL: file)
+        await queue.enqueue(URLRequest(url: URL(string: "https://a.com/1")!))
+        await queue.enqueue(URLRequest(url: URL(string: "https://a.com/2")!))   // survives the atomic rewrite
+        let values = try file.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(values.isExcludedFromBackup, true)
+    }
+
+    private actor HeaderBox {
+        private(set) var value: String?
+        func set(_ value: String?) { self.value = value }
+    }
+
     private actor Box {
         private(set) var value = 0
         func increment() { value += 1 }

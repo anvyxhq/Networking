@@ -36,7 +36,7 @@ final class TransportTests: XCTestCase {
             let _: Item = try await client.send(Endpoint(path: "missing"))
             XCTFail("expected error")
         } catch let error as APIError {
-            guard case .unacceptableStatus(let code, _) = error else { return XCTFail("wrong error") }
+            guard case .server(let code, _) = error else { return XCTFail("wrong error") }
             XCTAssertEqual(code, 404)
         } catch {
             XCTFail("unexpected error type")

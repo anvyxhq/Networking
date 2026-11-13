@@ -12,6 +12,10 @@ private let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Networking"
 
 /// A small async/await HTTP client. Configure it with a base URL and optional
 /// default headers (e.g. an auth token), then send typed `Endpoint`s.
+///
+/// Header names and values — default headers, endpoint headers and whatever the
+/// adapters add — are stripped of CR, LF and other control characters before
+/// the request is sent.
 public actor APIClient {
     private let baseURL: URL
     private let transport: HTTPTransport
@@ -21,7 +25,17 @@ public actor APIClient {
     private let retrier: RequestRetrier?
     private let cache: ResponseCache?
     private let logsCURL: Bool
+    private let validator: (any ResponseValidator)?
+    private let logRedaction: LogRedaction
 
+    /// - Parameters:
+    ///   - transport: what performs the requests. Pass your own `URLSession`
+    ///     (for example `URLSession(configuration: .api())`) to control
+    ///     timeouts, or any ``HTTPTransport``. If the session has a delegate you
+    ///     own it: invalidate it when the client is no longer needed.
+    ///   - validator: runs on every HTTP response before the status check.
+    ///   - logRedaction: what is hidden in log output (URL query values, and the
+    ///     `curl` command when `logsCURL` is on).
     public init(
         baseURL: URL,
         transport: HTTPTransport = URLSession.shared,
@@ -30,7 +44,9 @@ public actor APIClient {
         adapters: [RequestAdapter] = [],
         retrier: RequestRetrier? = nil,
         cache: ResponseCache? = nil,
-        logsCURL: Bool = false
+        logsCURL: Bool = false,
+        validator: (any ResponseValidator)? = nil,
+        logRedaction: LogRedaction = .default
     ) {
         self.baseURL = baseURL
         self.transport = transport
@@ -40,11 +56,15 @@ public actor APIClient {
         self.retrier = retrier
         self.cache = cache
         self.logsCURL = logsCURL
+        self.validator = validator
+        self.logRedaction = logRedaction
     }
 
     /// Update a default header sent with every request (pass `nil` to remove it).
     public func setHeader(_ value: String?, for field: String) {
-        defaultHeaders[field] = value
+        let name = HeaderSanitizer.name(field)
+        guard !name.isEmpty else { return }
+        defaultHeaders[name] = value.map(HeaderSanitizer.value)
     }
 
     @discardableResult
@@ -57,17 +77,22 @@ public actor APIClient {
         do {
             return try decoder.decode(Response.self, from: data)
         } catch {
-            throw APIError.decoding(error.localizedDescription)
+            throw APIError.decoding(error, type: Response.self)
         }
     }
 
     /// Sends the request and returns the raw body, applying adapters and the
     /// retry policy. Use this when you need bytes (images, files) rather than JSON.
+    ///
+    /// Throws ``APIError``, or whatever error an adapter or the
+    /// ``ResponseValidator`` throws. Cancelling the calling task stops the
+    /// request and any pending retry with ``APIError/cancelled``.
     public func sendForData<Response>(_ endpoint: Endpoint<Response>) async throws -> Data {
         var request = try makeRequest(for: endpoint)
         for adapter in adapters {
             request = try await adapter.adapt(request)
         }
+        HeaderSanitizer.sanitize(&request)
 
         // HTTP response cache (GET only): serve fresh entries without a round-trip;
         // revalidate stale ones with ETag / Last-Modified.
@@ -83,43 +108,62 @@ public actor APIClient {
         }
 
         if logsCURL {
-            log.debug("\(request.curlString)")
+            let curl = request.curlString(redacting: logRedaction)
+            log.debug("\(curl, privacy: .private)")
         }
+        let method = endpoint.method.rawValue
+        let path = endpoint.path
+        let loggedURL = request.url.map { logRedaction.string(for: $0) } ?? ""
 
         var attempt = 0
         while true {
-            log.debug("→ \(endpoint.method.rawValue) \(request.url?.absoluteString ?? endpoint.path)")
+            if Task.isCancelled { throw APIError.cancelled }
+            log.debug("→ \(method, privacy: .public) \(path, privacy: .public) \(loggedURL, privacy: .private)")
+
+            var received: HTTPURLResponse?
             do {
-                let (data, response) = try await transport.data(for: request)
-                let http = response as? HTTPURLResponse
-                let status = http?.statusCode ?? 200
+                let data: Data
+                let response: URLResponse
+                do {
+                    (data, response) = try await transport.data(for: request)
+                } catch {
+                    throw Task.isCancelled ? APIError.cancelled : APIError.wrapping(error)
+                }
+                guard let http = response as? HTTPURLResponse else { throw APIError.nonHTTPResponse }
+                received = http
+                let status = http.statusCode
 
                 if status == 304, let cachedEntry {
-                    if let cache, let cacheKey, let http {
+                    if let cache, let cacheKey {
                         await cache.store(Self.cacheEntry(data: cachedEntry.data, http: http, fallback: cachedEntry) ?? cachedEntry,
                                           for: cacheKey)
                     }
                     return cachedEntry.data
                 }
+                try validator?.validate(data: data, response: http)
                 if !(200..<300).contains(status) {
-                    throw APIError.unacceptableStatus(code: status, data: data)
+                    throw APIError.server(status: status, body: data)
                 }
-                if let cache, let cacheKey, let http, let entry = Self.cacheEntry(data: data, http: http, fallback: nil) {
+                if let cache, let cacheKey, let entry = Self.cacheEntry(data: data, http: http, fallback: nil) {
                     await cache.store(entry, for: cacheKey)
                 }
                 return data
-            } catch {
-                let apiError = (error as? APIError) ?? .transport(error.localizedDescription)
+            } catch let apiError as APIError {
                 let effectiveRetrier = endpoint.retrier ?? retrier
-                guard let effectiveRetrier,
-                      case let .retry(delay) = await effectiveRetrier.shouldRetry(request, dueTo: apiError, attempt: attempt)
+                guard !apiError.isCancelled, let effectiveRetrier,
+                      case let .retry(delay) = await effectiveRetrier.shouldRetry(
+                          request, dueTo: apiError, attempt: attempt, response: received)
                 else {
-                    log.error("✗ \(endpoint.path): \(String(describing: apiError))")
+                    log.error("✗ \(method, privacy: .public) \(path, privacy: .public): \(apiError.logSummary, privacy: .public)")
                     throw apiError
                 }
                 attempt += 1
                 if delay > 0 {
-                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    do {
+                        try await Task.sleep(nanoseconds: UInt64(min(delay, 86_400) * 1_000_000_000))
+                    } catch {
+                        throw APIError.cancelled
+                    }
                 }
             }
         }
@@ -167,8 +211,14 @@ public actor APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = endpoint.method.rawValue
         request.httpBody = endpoint.body
-        for (field, value) in defaultHeaders { request.setValue(value, forHTTPHeaderField: field) }
-        for (field, value) in endpoint.headers { request.setValue(value, forHTTPHeaderField: field) }
+        if let timeout = endpoint.timeout { request.timeoutInterval = timeout }
+        for headers in [defaultHeaders, endpoint.headers] {
+            for (field, value) in headers {
+                let name = HeaderSanitizer.name(field)
+                guard !name.isEmpty else { continue }
+                request.setValue(HeaderSanitizer.value(value), forHTTPHeaderField: name)
+            }
+        }
         return request
     }
 }

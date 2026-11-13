@@ -24,20 +24,20 @@ final class InterceptorTests: XCTestCase {
     }
 
     func testRetrierRetriesRetryableStatus() async {
-        let retrier = ExponentialBackoffRetrier(maxAttempts: 3, baseDelay: 0.1)
-        let decision = await retrier.shouldRetry(request(), dueTo: .unacceptableStatus(code: 503, data: Data()), attempt: 0)
+        let retrier = ExponentialBackoffRetrier(maxAttempts: 3, baseDelay: 0.1, jitter: 0)
+        let decision = await retrier.shouldRetry(request(), dueTo: .server(status: 503, body: Data()), attempt: 0)
         XCTAssertEqual(decision, .retry(afterDelay: 0.1))
     }
 
     func testRetrierStopsOnNonRetryableStatus() async {
         let retrier = ExponentialBackoffRetrier(maxAttempts: 3)
-        let decision = await retrier.shouldRetry(request(), dueTo: .unacceptableStatus(code: 404, data: Data()), attempt: 0)
+        let decision = await retrier.shouldRetry(request(), dueTo: .server(status: 404, body: Data()), attempt: 0)
         XCTAssertEqual(decision, .doNotRetry)
     }
 
     func testRetrierStopsAtMaxAttempts() async {
         let retrier = ExponentialBackoffRetrier(maxAttempts: 2, baseDelay: 0.1)
-        let decision = await retrier.shouldRetry(request(), dueTo: .unacceptableStatus(code: 500, data: Data()), attempt: 5)
+        let decision = await retrier.shouldRetry(request(), dueTo: .server(status: 500, body: Data()), attempt: 5)
         XCTAssertEqual(decision, .doNotRetry)
     }
 }

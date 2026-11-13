@@ -24,6 +24,8 @@ for try await event in ServerSentEvents.stream(for: request) { handle(event) }
 - ``HTTPMethod``
 - ``APIError``
 - ``HTTPTransport``
+- ``ResponseValidator``
+- ``LogRedaction``
 
 ### Adapters & Retry
 - ``RequestAdapter``
@@ -31,6 +33,10 @@ for try await event in ServerSentEvents.stream(for: request) { handle(event) }
 - ``RequestRetrier``
 - ``ExponentialBackoffRetrier``
 - ``RetryDecision``
+
+### Offline
+- ``OfflineRequestQueue``
+- ``QueuedRequest``
 
 ### Caching
 - ``ResponseCache``
